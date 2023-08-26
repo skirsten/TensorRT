@@ -96,7 +96,15 @@ class TensorInfo:
         return f"TensorInfo({str(self.tensor_format)}, {str(self.dtype)}, {self.strides}, {self.vectorized_dim}, {self.components_per_element})"
 
     def __hash__(self):
-        return hash((self.tensor_format, self.dtype, self.strides, self.vectorized_dim, self.components_per_element))
+        return hash(
+            (
+                self.tensor_format,
+                self.dtype,
+                self.strides,
+                self.vectorized_dim,
+                self.components_per_element,
+            )
+        )
 
 
 @Encoder.register(TensorInfo)
@@ -146,7 +154,10 @@ class Algorithm:
 
         implementation = algorithm.algorithm_variant.implementation
         tactic = algorithm.algorithm_variant.tactic
-        inputs = tuple(TensorInfo.from_trt(algorithm.get_algorithm_io_info(i)) for i in range(context.num_inputs))
+        inputs = tuple(
+            TensorInfo.from_trt(algorithm.get_algorithm_io_info(i))
+            for i in range(context.num_inputs)
+        )
         outputs = tuple(
             TensorInfo.from_trt(algorithm.get_algorithm_io_info(i))
             for i in range(context.num_inputs, context.num_inputs + context.num_outputs)
@@ -233,7 +244,10 @@ class TacticReplayData(TypedDict(lambda: str, lambda: Algorithm)):
 
     def __str__(self):
         return "\n".join(
-            [f"Layer: {name}\n{constants.TAB}Algorithm: {algorithm}" for (name, algorithm) in self.items()]
+            [
+                f"Layer: {name}\n{constants.TAB}Algorithm: {algorithm}"
+                for (name, algorithm) in self.items()
+            ]
         )
 
 
@@ -250,6 +264,7 @@ def decode(dct):
 ##
 ## Algorithm Selectors
 ##
+
 
 # Everything is encapsulated in functions so that we don't create a dependency on TensorRT
 # when objects from this file are imported.
@@ -317,7 +332,7 @@ def TacticRecorder(record):
             Returns:
                 None
             """
-            for (context, choice) in zip(contexts, choices):
+            for context, choice in zip(contexts, choices):
                 self.data.add(context.name, Algorithm.from_trt(context, choice))
 
             if self.path is not None:
@@ -372,9 +387,6 @@ def TacticReplayer(replay):
             """
             default_choices = super().select_algorithms(context, choices)
 
-            if not self.data:  # No replay data, we are in recording mode.
-                return default_choices
-
             if context.name not in self.data:
                 G_LOGGER.warning(
                     f"Layer: {context.name} was not found in the tactic replay. Falling back to default tactics."
@@ -399,7 +411,12 @@ def TacticReplayer(replay):
                     f"Note: Tactic in replay was:{sep}{to_select}\nProvided choices were:{sep}{sep.join(map(str, tactic_choices))}"
                 )
 
-            return [tactic_choices.index(to_select)]
+            choice = tactic_choices.index(to_select)
+
+            G_LOGGER.info(
+                f"Selected tactic {choice} out of {len(default_choices)} possible choices."
+            )
+            return [choice]
 
         @G_LOGGER.log_exception
         @func.constantmethod
@@ -412,14 +429,17 @@ def TacticReplayer(replay):
                 PolygraphyException:
                         If a tactic specified in ``self.data`` was not selected for a layer.
             """
-            for (context, choice) in zip(contexts, choices):
-                if context.name in self.data:
-                    to_select = self.data[context.name]
-                    selected = Algorithm.from_trt(context, choice)
-                    if to_select != selected:
-                        G_LOGGER.critical(
-                            f"Layer: {context.name} | TensorRT selected a tactic different than the one specified in the tactic replay."
-                            f"\nNote: Tactic in replay was:\n{constants.TAB}{to_select}, but TensorRT selected:\n{constants.TAB}{selected}"
-                        )
+            for context, choice in zip(contexts, choices):
+                if context.name not in self.data:
+                    G_LOGGER.warning(f"Layer: {context.name} was not found in the tactic replay.")
+                    continue
+
+                to_select = self.data[context.name]
+                selected = Algorithm.from_trt(context, choice)
+                if to_select != selected:
+                    G_LOGGER.critical(
+                        f"Layer: {context.name} | TensorRT selected a tactic different than the one specified in the tactic replay."
+                        f"\nNote: Tactic in replay was:\n{constants.TAB}{to_select}, but TensorRT selected:\n{constants.TAB}{selected}"
+                    )
 
     return TacticReplayerClass()
